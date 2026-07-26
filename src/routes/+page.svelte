@@ -1,14 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import type { Book } from '$lib/types';
-  import {
-    initDB,
-    getAllBooks,
-    addBook,
-    addChapter,
-    deleteBook,
-  } from '$lib/db/operations';
-  import { parseEpub } from '$lib/epub/parser';
+  import { initDB, getAllBooks, deleteBook } from '$lib/db/operations';
+  import { importEpub } from '$lib/importer';
   import BookCard from '$lib/components/BookCard.svelte';
   import UploadForm from '$lib/components/UploadForm.svelte';
 
@@ -23,11 +17,7 @@
   });
 
   async function handleUpload(file: File) {
-    const { book, chapters } = await parseEpub(file);
-    await addBook(book);
-    for (const ch of chapters) {
-      await addChapter({ ...ch, id: book.id + '_' + ch.id });
-    }
+    await importEpub(file);
     books = await getAllBooks();
   }
 

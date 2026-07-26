@@ -1,5 +1,5 @@
 <script lang="ts">
-  export type WordData = { score: number; prediction: string };
+  import type { WordData } from '$lib/types';
 
   let { text, wordData, maxWords }: {
     text: string;

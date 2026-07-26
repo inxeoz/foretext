@@ -41,6 +41,11 @@ export interface AppStats {
   booksCompleted: number;
 }
 
+export interface WordData {
+  score: number;
+  prediction: string;
+}
+
 export const PREDICTION_LEVELS: PredictionLevel[] = [
   1, 2, 3, 5, 8, 13, 21, "sentence",
 ];

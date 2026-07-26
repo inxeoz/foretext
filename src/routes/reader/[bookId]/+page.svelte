@@ -1,94 +1,68 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import type { Book, Chapter, Prediction, PredictionLevel, ChapterMeta } from '$lib/types';
-  import { LEVEL_WINDOW, PREDICTION_LEVELS } from '$lib/types';
-  import { initDB, getBook, getChapter, addPrediction, getPredictions } from '$lib/db/operations';
-  import { calculateNewLevel, getLevelLabel } from '$lib/prediction/levels';
+  import type { Book, Chapter, PredictionLevel } from '$lib/types';
+  import { ReadingSession } from '$lib/prediction/reading-session';
+  import { getLevelLabel } from '$lib/prediction/levels';
   import Reader from '$lib/components/Reader.svelte';
 
   let bookId = $derived(page.params.bookId ?? '');
 
+  let loading = $state(true);
+  let error = $state<string | null>(null);
   let book = $state<Book | null>(null);
-  let filteredChapters = $state<ChapterMeta[]>([]);
-  let chapterIdx = $state(0);
+  let chapter = $state<Chapter | null>(null);
   let level = $state<PredictionLevel>(1);
   let bestLevel = $state<PredictionLevel>(1);
-  let loading = $state(true);
-  let chapter = $state<Chapter | null>(null);
-  let error = $state<string | null>(null);
+  let chapterIdx = $state(0);
+  let chapterCount = $state(0);
+  let session = $state<ReadingSession | null>(null);
 
   let chaptersParam = $derived(page.url.searchParams.get('chapters'));
 
   $effect(() => {
-    const currentChapters = chaptersParam;
-    if (!currentChapters) {
+    const ids = chaptersParam;
+    if (!ids) {
       goto('/reader/' + bookId + '/select');
       return;
     }
 
-    const selectedIds = currentChapters.split(',');
-
-    initDB()
-      .then(() => getBook(bookId))
-      .then(async (b) => {
-        if (!b) {
-          error = 'Book not found';
-          return;
-        }
-        book = b;
-
-        const filtered = b.chapters.filter((ch: ChapterMeta) =>
-          selectedIds.includes(ch.id),
-        );
-        if (filtered.length === 0) {
-          error = 'No chapters selected';
-          return;
-        }
-        filteredChapters = filtered;
-
-        const ch = await getChapter(b.id, filtered[0].id);
-        if (ch) chapter = ch;
-      })
-      .catch(() => {
-        error = 'Failed to load book';
-      })
-      .finally(() => {
+    const selectedIds = ids.split(',');
+    const s = new ReadingSession(bookId, selectedIds);
+    session = s;
+    s.init().then(() => {
+      if (s.error) {
+        error = s.error;
         loading = false;
-      });
+        return;
+      }
+      book = s.book;
+      chapter = s.currentChapter;
+      level = s.level;
+      bestLevel = s.bestLevel;
+      chapterIdx = s.chapterIdx;
+      chapterCount = s.chapterCount;
+      loading = false;
+    });
   });
 
   async function handleScore(score: number, prediction: string, actual: string) {
-    if (!book || !chapter) return;
-
-    await addPrediction({
-      bookId: book.id,
-      chapterId: chapter.id,
-      level,
-      prediction,
-      actual,
-      similarity: score,
-      timestamp: Date.now(),
-    });
-
-    const recent = await getPredictions(book.id, LEVEL_WINDOW);
-    const scores = recent.map((p: Prediction) => p.similarity);
-    const newLevel = calculateNewLevel(level, scores);
-    level = newLevel;
-    if (PREDICTION_LEVELS.indexOf(newLevel) > PREDICTION_LEVELS.indexOf(bestLevel)) {
-      bestLevel = newLevel;
-    }
+    if (!session) return;
+    await session.recordPrediction(score, prediction, actual);
+    level = session.level;
+    bestLevel = session.bestLevel;
   }
 
   function handleChapterComplete() {
-    const next = chapterIdx + 1;
-    if (next < filteredChapters.length) {
-      chapterIdx = next;
-      getChapter(bookId, filteredChapters[next].id).then((ch) => {
-        if (ch) chapter = ch;
-      });
-    } else {
+    if (!session) return;
+    const done = session.advanceChapter();
+    if (done) {
       goto('/stats');
+    } else {
+      chapter = session.currentChapter;
+      level = session.level;
+      bestLevel = session.bestLevel;
+      chapterIdx = session.chapterIdx;
     }
   }
 </script>
@@ -126,9 +100,10 @@
       </p>
     </div>
 
-    {#key chapter.id + '-' + chapterIdx}
+    {#key chapter.id}
       <Reader
-        chapter={chapter}
+        session={session!.challengeSession!}
+        {chapter}
         {level}
         onScore={handleScore}
         onComplete={handleChapterComplete}
