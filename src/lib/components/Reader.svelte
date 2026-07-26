@@ -60,7 +60,7 @@
         {#each session.completedParagraphs as entry, i (entry.paraIdx)}
           <div>
             {#if i > 0}
-              <hr class="my-4 border-zinc-200" data-testid="para-separator" />
+              <hr class="my-4 border-zinc-200" data-testid="para-separator-{entry.paraIdx}" />
             {/if}
             <div class="text-zinc-500" data-testid="reader-completed-text">
               <PredictedParagraph
